@@ -1,0 +1,10 @@
+Universal Conditioner
+
+Third-party attributions:
+
+ComfyUI-ClipProj
+  Author: nicolab28
+  Source: https://github.com/nicolab28/ComfyUI-ClipProj (version 0.1.13, commit c01ba8f)
+  License: MIT, in LICENSES/ClipProj-MIT.txt
+  Used in: projector.py (the projection safetensors file format, standardized linear and
+  residual projection math, and token-0 attention-sink vector handling).

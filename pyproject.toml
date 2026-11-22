@@ -1,0 +1,13 @@
+[project]
+name = "comfyui-universal-conditioner"
+description = "Use an external LLM/VLM server as a shared text and vision encoder for ComfyUI diffusion models via learned adapters."
+version = "0.1.0"
+license = {file = "LICENSE"}
+dependencies = ["numpy", "Pillow", "safetensors", "torch"]
+
+[project.urls]
+Repository = "https://github.com/igorls/ComfyUI-UniversalConditioner"
+
+[tool.comfy]
+PublisherId = "igorls"
+DisplayName = "Universal Conditioner"
