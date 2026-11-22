@@ -81,6 +81,20 @@ Inputs:
 Output:
 - `CLIP`: Standard ComfyUI `CLIP` handle compatible with `CLIPTextEncode`, `TextEncodeQwenImageEdit`, and MiniMax H3 conditioning nodes.
 
+## Prompt enhancer
+
+**Universal Conditioner Prompt Enhancer** (`UniCondPromptEnhancer`) rewrites a short request into a finished prompt with the same language model, before it is encoded. It calls `POST <server_url>/v1/chat/completions` (the OpenAI chat format) on the server you already run for the encoder, so no second model is loaded.
+
+- With pictures connected it writes an edit prompt: what changes, what stays, and any text in quotes exactly as you wrote it. It names the pictures `<image1>`, `<image2>`, the same labels the Qwen-Image 2.1 text encode node uses, so connect them in the same order on both nodes.
+- Without pictures it writes an image prompt.
+- The prompt comes back in the language of your request.
+
+Inputs: `url`, `prompt`, `enhance` (off passes your prompt through unchanged), `seed` (change it for another wording), `temperature`, `max_tokens`, `model`, `instructions` (your own instructions for the rewrite, in place of the built-in ones), and `images`. Output: `prompt`, a string to connect to a text encode node.
+
+## Workflows
+
+- [workflows/qwen_image_21_edit_prompt_enhancer.json](workflows/qwen_image_21_edit_prompt_enhancer.json): a Qwen-Image 2.1 edit to drop onto the ComfyUI page ([API format](workflows/qwen_image_21_edit_prompt_enhancer_api.json)). One picture and a short request go to the prompt enhancer; the rewritten prompt and the picture go to the Qwen-Image 2.1 text encode node through the Universal Conditioner; 8 steps at cfg 1.
+
 ## Adapter cards
 
 Adapter cards and evaluation notes live under `adapters/`. Adapter `.safetensors` weights are not stored in this git repository and are not published yet:
