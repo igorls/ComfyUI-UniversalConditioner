@@ -25,6 +25,46 @@ import json
 import os
 import re
 import unicodedata
+import wave
+
+import numpy as np
+
+
+def _load_wav_16k(wav_path):
+    """Read PCM WAV directly via stdlib wave (or soundfile fallback) and resample to 16 kHz float32.
+
+    Avoids faster-whisper's internal PyAV decode_audio() call, which fails under PyAV >= 14
+    where av.open(..., metadata_errors=...) was removed.
+    """
+    try:
+        with wave.open(wav_path, "rb") as wf:
+            n_ch = wf.getnchannels()
+            sw = wf.getsampwidth()
+            sr = wf.getframerate()
+            raw = wf.readframes(wf.getnframes())
+        if sw == 2:
+            audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        elif sw == 4:
+            audio = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
+        elif sw == 1:
+            audio = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
+        else:
+            raise ValueError(f"Unsupported WAV sample width {sw}")
+        if n_ch > 1:
+            audio = audio.reshape(-1, n_ch).mean(axis=1)
+    except Exception:
+        import soundfile as sf
+
+        audio, sr = sf.read(wav_path, dtype="float32", always_2d=False)
+        if audio.ndim > 1:
+            audio = audio.mean(axis=1)
+
+    if sr != 16000 and audio.size > 0:
+        n_out = max(1, int(round(audio.shape[0] * 16000.0 / float(sr))))
+        x_old = np.linspace(0.0, 1.0, num=audio.shape[0], endpoint=False)
+        x_new = np.linspace(0.0, 1.0, num=n_out, endpoint=False)
+        audio = np.interp(x_new, x_old, audio).astype(np.float32)
+    return np.ascontiguousarray(audio, dtype=np.float32)
 
 
 _NON_SPACED_LANGS = frozenset(("ja", "zh", "yue"))
@@ -78,17 +118,31 @@ def compute_error_rate(reference, hypothesis, language="en"):
 
 
 def load_transcriber(model_name, device="cuda"):
-    """Load faster-whisper if installed, else openai-whisper."""
+    """Load faster-whisper if installed (auto-falling back to CPU int8 on CUDA lib mismatch),
+    else openai-whisper."""
     try:
         from faster_whisper import WhisperModel
 
-        compute_type = "float16" if device == "cuda" else "int8"
-        model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        def _make_fw(dev):
+            compute_type = "float16" if dev == "cuda" else "int8"
+            return WhisperModel(model_name, device=dev, compute_type=compute_type)
+
+        state = {"dev": device, "model": _make_fw(device)}
 
         def _transcribe_fw(wav_path, language):
             lang_arg = None if (not language or language == "auto") else language
-            segments, _ = model.transcribe(wav_path, language=lang_arg, beam_size=5, vad_filter=False)
-            return " ".join(seg.text.strip() for seg in segments).strip()
+            audio = _load_wav_16k(wav_path)
+            try:
+                segments, _ = state["model"].transcribe(audio, language=lang_arg, beam_size=5, vad_filter=False)
+                return " ".join(seg.text.strip() for seg in segments).strip()
+            except RuntimeError as err:
+                if state["dev"] == "cuda" and ("libcublas" in str(err).lower() or "cublas" in str(err).lower()):
+                    print("[WER-EVAL] faster-whisper CUDA library mismatch; falling back to CPU int8", flush=True)
+                    state["dev"] = "cpu"
+                    state["model"] = _make_fw("cpu")
+                    segments, _ = state["model"].transcribe(audio, language=lang_arg, beam_size=5, vad_filter=False)
+                    return " ".join(seg.text.strip() for seg in segments).strip()
+                raise
 
         return "faster-whisper:" + model_name, _transcribe_fw
     except ImportError:

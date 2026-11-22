@@ -506,7 +506,7 @@ def train_oof_refinement_connector(
     return net, best_metrics
 
 
-def save_qi21_adapter(path, ridge, layers, clip_8b_name, source_model, meta_extra, net=None, clamp_lo=None, clamp_hi=None, n_to_1="last"):
+def save_qi21_adapter(path, ridge, layers, clip_8b_name, source_model, meta_extra, net=None, clamp_lo=None, clamp_hi=None, n_to_1="last", source_file="", source_sha256=""):
     tensors = {
         "W": ridge["W"].half().contiguous(),
         "mean_in": ridge["mean_in"].half().contiguous(),
@@ -529,6 +529,8 @@ def save_qi21_adapter(path, ridge, layers, clip_8b_name, source_model, meta_extr
         "lambda": str(ridge["lam_main"]),
         "lambda_emb": str(ridge["lam_emb"]),
         "source_model": source_model,
+        "source_file": source_file,
+        "source_sha256": source_sha256,
         "target_model": os.path.basename(clip_8b_name) if clip_8b_name else "qwen3vl_8b",
     }
     if net is not None:
@@ -545,7 +547,9 @@ def save_qi21_adapter(path, ridge, layers, clip_8b_name, source_model, meta_extr
 def main():
     parser = argparse.ArgumentParser(description="Calibrate a Universal Conditioner adapter for Qwen-Image 2.1.")
     parser.add_argument("--server-url", default=encoder.DEFAULT_URL)
-    parser.add_argument("--source-model", default="qwen3.8-27b")
+    parser.add_argument("--source-model", default="neroued/Qwen3.8-27B-nvfp4-NInfer")
+    parser.add_argument("--source-file", default="")
+    parser.add_argument("--source-sha256", default="")
     parser.add_argument("--clip-8b", default="qwen3vl_8b_int8_convrot.safetensors")
     parser.add_argument("--prompts-json", required=True)
     parser.add_argument("--n-prompts", type=int, default=2600)
@@ -636,6 +640,7 @@ def main():
             "edit_r2_test": round(ridge["edit_r2"], 6),
         },
         net=None, clamp_lo=clamp_lo, clamp_hi=clamp_hi, n_to_1=args.n_to_1,
+        source_file=args.source_file, source_sha256=args.source_sha256,
     )
     del Xtr, Ytr, Xte, Yte
     gc.collect()
@@ -664,6 +669,7 @@ def main():
                 "edit_r2_test": round(s_er, 6),
             },
             net=net, clamp_lo=clamp_lo, clamp_hi=clamp_hi, n_to_1=args.n_to_1,
+            source_file=args.source_file, source_sha256=args.source_sha256,
         )
 
 

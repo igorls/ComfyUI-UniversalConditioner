@@ -49,26 +49,43 @@ def eval_std_r2(y_pred, y_true, m_out, s_out, mask=None):
 
 
 def compute_gram(X_train, Y_train, device="cuda"):
-    """Compute standardized (xtx, xty, mean_in, std_in, mean_out, std_out) with FP32 chunk matmuls
-    accumulated into FP64 Gram matrices."""
-    Xt = X_train.float()
-    Yt = Y_train.float()
-    mean_in = Xt.mean(dim=0)
-    std_in = Xt.std(dim=0).clamp(min=1e-6)
-    mean_out = Yt.mean(dim=0)
-    std_out = Yt.std(dim=0).clamp(min=1e-6)
+    """Compute standardized (xtx, xty, mean_in, std_in, mean_out, std_out) using streaming GPU
+    moments and row-tiled FP32->FP64 Gram accumulation (no full-matrix CPU float copy or 10 GiB temp)."""
+    n_rows, d_in = X_train.shape
+    d_out = Y_train.shape[1]
+    chunk = 8192
 
-    d_in, d_out = Xt.shape[1], Yt.shape[1]
+    # Two-pass streaming FP64 mean/var on GPU: immune to cancellation and zero full-matrix CPU float copy
+    sum_x = torch.zeros(d_in, dtype=torch.float64, device=device)
+    sum_y = torch.zeros(d_out, dtype=torch.float64, device=device)
+    for i in range(0, n_rows, chunk):
+        sum_x.add_(X_train[i : i + chunk].to(device=device, dtype=torch.float32).sum(dim=0, dtype=torch.float64))
+        sum_y.add_(Y_train[i : i + chunk].to(device=device, dtype=torch.float32).sum(dim=0, dtype=torch.float64))
+    m_in = (sum_x / max(1, n_rows)).float()
+    m_out = (sum_y / max(1, n_rows)).float()
+    ss_x = torch.zeros(d_in, dtype=torch.float64, device=device)
+    ss_y = torch.zeros(d_out, dtype=torch.float64, device=device)
+    for i in range(0, n_rows, chunk):
+        dx = X_train[i : i + chunk].to(device=device, dtype=torch.float32) - m_in
+        dy = Y_train[i : i + chunk].to(device=device, dtype=torch.float32) - m_out
+        ss_x.add_(dx.pow(2).sum(dim=0, dtype=torch.float64))
+        ss_y.add_(dy.pow(2).sum(dim=0, dtype=torch.float64))
+    denom = max(1, n_rows - 1)
+    s_in = (ss_x / denom).sqrt().float().clamp(min=1e-6)
+    s_out = (ss_y / denom).sqrt().float().clamp(min=1e-6)
+    mean_in, std_in = m_in.cpu(), s_in.cpu()
+    mean_out, std_out = m_out.cpu(), s_out.cpu()
+    del sum_x, sum_y, ss_x, ss_y
+
     xtx = torch.zeros(d_in, d_in, dtype=torch.float64, device=device)
     xty = torch.zeros(d_in, d_out, dtype=torch.float64, device=device)
-    m_in, s_in = mean_in.to(device), std_in.to(device)
-    m_out, s_out = mean_out.to(device), std_out.to(device)
-
-    chunk = 8192
-    for i in range(0, Xt.shape[0], chunk):
-        xb = (Xt[i : i + chunk].to(device) - m_in) / s_in
-        yb = (Yt[i : i + chunk].to(device) - m_out) / s_out
-        xtx.add_((xb.T @ xb).double())
+    row_tile = 8192
+    for i in range(0, n_rows, chunk):
+        xb = (X_train[i : i + chunk].to(device=device, dtype=torch.float32) - m_in) / s_in
+        yb = (Y_train[i : i + chunk].to(device=device, dtype=torch.float32) - m_out) / s_out
+        for r0 in range(0, d_in, row_tile):
+            r1 = min(d_in, r0 + row_tile)
+            xtx[r0:r1].add_((xb[:, r0:r1].T @ xb).double())
         xty.add_((xb.T @ yb).double())
     return xtx, xty, mean_in, std_in, mean_out, std_out
 

@@ -200,7 +200,7 @@ def extract_32b_targets_with_ids(clip_name, prompts, vision_items=()):
             print(f"[H3-32B] Vision {len(vision_targets)}/{len(vision_items)} ({time.perf_counter() - t2:.1f}s)", flush=True)
     finally:
         sm.transformer.forward = orig_forward
-        del clip
+        del sm, orig_forward, catching, hf_tok, clip
         mm.unload_all_models()
         mm.soft_empty_cache()
         gc.collect()
@@ -210,6 +210,19 @@ def extract_32b_targets_with_ids(clip_name, prompts, vision_items=()):
     sink_out = torch.stack(sinks, dim=0).mean(dim=0) if sinks else torch.zeros(5120, dtype=torch.float32)
     print(f"[H3-32B] Unloaded. sink_out norm={sink_out.norm().item():.2f} (from {len(sinks)} clean sinks)", flush=True)
     return text_targets, vision_targets, sink_out
+
+
+def _fetch_layers_chunked(url, parts, layers, max_per_call=8):
+    """Fetch hidden states across any number of layers, splitting into <= max_per_call chunks."""
+    if len(layers) <= max_per_call:
+        return encoder.fetch_hidden_states(url, parts, layers=layers)
+    metas = []
+    hs = []
+    for i in range(0, len(layers), max_per_call):
+        m, h = encoder.fetch_hidden_states(url, parts, layers=layers[i : i + max_per_call])
+        metas.append(m)
+        hs.append(h)
+    return metas[0], torch.cat(hs, dim=-1)
 
 
 def collect_h3_multilayer(url, layers, text_targets, vision_targets=(), clip_32b_name=None, workers=4):
@@ -224,7 +237,7 @@ def collect_h3_multilayer(url, layers, text_targets, vision_targets=(), clip_32b
     def fetch_text(p_idx):
         item = text_targets[p_idx]
         parts = encoder.build_parts(item["prompt"])
-        meta, h_full = encoder.fetch_hidden_states(url, parts, layers=layers)
+        meta, h_full = _fetch_layers_chunked(url, parts, layers)
         raw_seq = h_full.shape[1]
         tok_texts = meta.get("token_texts") or []
         tok_blens = meta.get("token_byte_lens")
@@ -295,7 +308,7 @@ def collect_h3_multilayer(url, layers, text_targets, vision_targets=(), clip_32b
     d_txt = d_vis + (5120 if clip_32b_name else 0)
     for v_idx, item in enumerate(vision_targets):
         parts = encoder.build_parts(item["prompt"], images=[item["img_tensor"]])
-        meta, h_full = encoder.fetch_hidden_states(url, parts, layers=layers)
+        meta, h_full = _fetch_layers_chunked(url, parts, layers)
         raw_seq = h_full.shape[1]
         t_types = meta.get("token_types") or []
         tok_texts = meta.get("token_texts") or []
@@ -934,6 +947,8 @@ def save_h3_adapter(
     meta_extra,
     net=None,
     seq_input="base_plus_emb",
+    source_file="",
+    source_sha256="",
 ):
     tensors = {
         "W": ridge_txt["W"].half().contiguous(),
@@ -964,6 +979,8 @@ def save_h3_adapter(
         "lambda": str(ridge_txt["lam_main"]),
         "lambda_emb": str(ridge_txt["lam_emb"]),
         "source_model": source_model,
+        "source_file": source_file,
+        "source_sha256": source_sha256,
         "target_model": clip_base or "qwen3vl_32b_minimax_h3",
     }
     if net is not None:
@@ -980,7 +997,9 @@ def save_h3_adapter(
 def main():
     parser = argparse.ArgumentParser(description="Calibrate and diagnose MiniMax H3 Universal Conditioner adapters.")
     parser.add_argument("--server-url", default=encoder.DEFAULT_URL)
-    parser.add_argument("--source-model", default="qwen3.8-27b")
+    parser.add_argument("--source-model", default="neroued/Qwen3.8-27B-nvfp4-NInfer")
+    parser.add_argument("--source-file", default="")
+    parser.add_argument("--source-sha256", default="")
     parser.add_argument("--clip-32b", default="qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors")
     parser.add_argument("--prompts-json", default="")
     parser.add_argument("--n-prompts", type=int, default=5200)
@@ -998,6 +1017,7 @@ def main():
     parser.add_argument("--dial-weight", type=float, default=3.5)
     parser.add_argument("--split-dial-weight", type=float, default=5.5)
     parser.add_argument("--cache-path", default="")
+    parser.add_argument("--extract-only", action="store_true", help="Save --cache-path and exit before fitting Ridge/connector")
     parser.add_argument("--out-dir", default="./adapters/minimax-h3")
     parser.add_argument("--out-prefix", default="unicond-h3-v4.3")
     parser.add_argument("--diag-adapter", default="", help="Run Check B stratified + probe diagnostics on an existing adapter")
@@ -1103,6 +1123,9 @@ def main():
                 args.cache_path,
             )
             print(f"[CACHE] Saved {args.cache_path}", flush=True)
+        if args.extract_only:
+            print("[EXTRACT-ONLY] Cache saved; exiting before training.", flush=True)
+            return
 
     n_tr = int(len(text_seqs) * 0.9)
     tr_seqs, te_seqs = text_seqs[:n_tr], text_seqs[n_tr:]
@@ -1195,6 +1218,8 @@ def main():
             "r2_test_vis": round(ridge_vis["r2"], 6) if ridge_vis else 0.0,
         },
         net=None,
+        source_file=args.source_file,
+        source_sha256=args.source_sha256,
     )
     del Xtr, Ytr, Xte, Yte
     gc.collect()
@@ -1257,6 +1282,8 @@ def main():
             },
             net=net,
             seq_input=args.seq_input,
+            source_file=args.source_file,
+            source_sha256=args.source_sha256,
         )
     print("\n=== DONE ===", flush=True)
 

@@ -418,6 +418,24 @@ class UniversalConditionerTest(unittest.TestCase):
         )
         self.assertEqual(metric, "wer")
         self.assertEqual(edits, 1)
+
+        import tempfile
+        import wave
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as td:
+            wp = os.path.join(td, "tone_24k.wav")
+            sr = 24000
+            samples = (0.25 * np.sin(2.0 * np.pi * 440.0 * np.arange(sr // 2) / sr) * 32767.0).astype(np.int16)
+            with wave.open(wp, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sr)
+                wf.writeframes(samples.tobytes())
+            audio_16k = eval_speech_wer._load_wav_16k(wp)
+            self.assertEqual(audio_16k.dtype, np.float32)
+            self.assertEqual(audio_16k.shape[0], 8000)
+            self.assertLessEqual(float(np.abs(audio_16k).max()), 0.3)
         self.assertEqual(ref_len, 5)
         self.assertAlmostEqual(rate, 0.2, places=4)
 
