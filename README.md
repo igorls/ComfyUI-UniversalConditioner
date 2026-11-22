@@ -44,7 +44,7 @@ The server responds with a binary frame:
 
 The default server URL in the node is `http://127.0.0.1:8000`. Set `url` in the node to match your server. If the server requires bearer authentication, set the `UNICOND_API_KEY` environment variable in the ComfyUI process instead of storing keys inside workflow files.
 
-Server availability: the `POST /v1/hidden_states` endpoint is implemented in [NInfer](https://github.com/igorls/ninfer), but it is not yet in a public NInfer release. Any server implementing the binary frame contract above works with this node.
+Server availability: the `POST /v1/hidden_states` endpoint is in [NInfer](https://github.com/igorls/ninfer) from NInfer Workstation 2026.11.22-v3port.25 on. Any server implementing the binary frame contract above works with this node.
 
 Source models:
 - Recommended: [neroued/Qwen3.8-27B-nvfp4-NInfer](https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer)
