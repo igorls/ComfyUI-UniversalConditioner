@@ -6,7 +6,7 @@ Maps multi-layer hidden states from an external 27B source encoder into MiniMax 
 
 | Field | Value |
 | --- | --- |
-| Adapter file | `unicond-h3-v4.4-6l-dual-seq.safetensors` (`690.13 MB`, sha256 `43cccbd678831444e30b23638677ff310e8471839d309d34c6660662698cbebe`, not published yet) |
+| Adapter file | [`unicond-h3-v4.4-6l-dual-seq.safetensors`](https://huggingface.co/igorls/universal-conditioner/blob/main/minimax-h3/unicond-h3-v4.4-6l-dual-seq.safetensors) (`690.13 MB`, sha256 `43cccbd678831444e30b23638677ff310e8471839d309d34c6660662698cbebe`) |
 | Recommended source model | [neroued/Qwen3.8-27B-nvfp4-NInfer](https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer) (`qwen3_8_27b_nvfp4.ninfer`, sha256 `74d2c57145e6ff11d1d2faa79594477f9bc903a611af1fb20218189fbbb77d82`, fitted source for `v4.4`) |
 | Also supported source model | [igorls/Qwen3.8-27B-Uncensored-NVFP4-NInfer](https://huggingface.co/igorls/Qwen3.8-27B-Uncensored-NVFP4-NInfer) (`qwen3_8_27b_orcarouter_nvfp4.ninfer`, sha256 `50f2e407a2a6ee6b049a41de2724119cb4bbcb189ba14445babdd2ff5d56a384`) |
 | Tapped source layers | `[-2, 15, 27, 43, 51, 59]` |

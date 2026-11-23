@@ -61,7 +61,7 @@ cd /path/to/ComfyUI/custom_nodes
 git clone https://github.com/igorls/ComfyUI-UniversalConditioner.git
 ```
 
-2. Place adapter `.safetensors` files in `ComfyUI/models/universal_conditioner/` (files in `ComfyUI/models/clip_projections/` are also discovered as a fallback). Adapter weights are hosted on Hugging Face at [igorls/universal-conditioner](https://huggingface.co/igorls/universal-conditioner). The Qwen-Image 2.1 adapter is published there; the MiniMax H3 adapter is not published yet.
+2. Place adapter `.safetensors` files in `ComfyUI/models/universal_conditioner/` (files in `ComfyUI/models/clip_projections/` are also discovered as a fallback). Adapter weights are hosted on Hugging Face at [igorls/universal-conditioner](https://huggingface.co/igorls/universal-conditioner). The Qwen-Image 2.1 and MiniMax H3 adapters are published there, each in its own folder with its license.
 3. **On-disk target encoder file requirement:** ComfyUI does not load target encoder weights into GPU VRAM, but adapters that use target token embeddings read rows from the target encoder's `.safetensors` file on disk in `ComfyUI/models/text_encoders/`. Loading fails if that file is missing:
    - Qwen-Image 2.1 adapter: `qwen3vl_8b_int8_convrot.safetensors`
    - MiniMax H3 adapter: `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`
